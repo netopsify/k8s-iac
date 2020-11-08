@@ -1,0 +1,188 @@
+---
+- hosts: all
+  become: true
+  tasks:
+    - name: Ensure file exists
+      ansible.builtin.file:
+        path: /etc/sysctl.d/k8s.conf
+        state: touch
+      become: true
+
+    - name: Letting iptables see bridged traffic
+      blockinfile:
+        dest: /etc/sysctl.d/k8s.conf
+        block: |
+          net.bridge.bridge-nf-call-ip6tables = 1
+          net.bridge.bridge-nf-call-iptables = 1
+      become: true
+
+    - name: Install packages that allow apt to be used over HTTPS
+      apt:
+        name: "{{ packages }}"
+        state: present
+        update_cache: yes
+      vars:
+        packages:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg-agent
+          - software-properties-common
+
+    - name: Uninstall old versions
+      apt:
+        name: "{{ packages }}"
+        state: absent
+        update_cache: yes
+      vars:
+        packages:
+          - docker
+          - docker-engine
+          - docker.io
+          - containerd
+          - runc
+
+    - name: Add an apt signing key for Docker
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add apt repository for stable version
+      apt_repository:
+        repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable
+        state: present
+
+    - name: Install docker and its dependecies
+      apt:
+        name: "{{ packages }}"
+        state: present
+        update_cache: yes
+      vars:
+        packages:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+      notify:
+        - docker status
+
+    - name: Add vagrant user to docker group
+      user:
+        name: vagrant
+        group: docker
+
+    - name: Remove swapfile from /etc/fstab
+      mount:
+        name: "{{ item }}"
+        fstype: swap
+        state: absent
+      with_items:
+        - swap
+        - none
+
+    - name: Disable swap
+      command: swapoff -a
+      when: ansible_swaptotal_mb > 0
+
+    - name: enable the ip forwarding permanently
+      command: sysctl -p
+
+    - name: Add an apt signing key for Kubernetes
+      apt_key:
+        url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+        state: present
+
+    - name: Adding apt repository for Kubernetes
+      apt_repository:
+        repo: deb https://apt.kubernetes.io/ kubernetes-xenial main
+        state: present
+        filename: kubernetes.list
+
+    - name: Install Kubernetes binaries
+      apt:
+        name: "{{ packages }}"
+        state: present
+        update_cache: yes
+      vars:
+        packages:
+          - kubelet
+          - kubeadm
+          - kubectl
+
+    - name: Restart kubelet
+      service:
+        name: kubelet
+        daemon_reload: yes
+        state: restarted
+
+    - name: Initialize the Kubernetes cluster using kubeadm
+      command: |
+        sudo kubeadm init \
+          --apiserver-advertise-address="192.168.50.10" \
+          --apiserver-cert-extra-sans="192.168.50.10"  \
+          --node-name master --pod-network-cidr=192.168.0.0/16
+
+    - name: Setup kubeconfig for vagrant user
+      command: "{{ item }}"
+      with_items:
+        - mkdir -p /home/vagrant/.kube
+        - cp -i /etc/kubernetes/admin.conf /home/vagrant/.kube/config
+        - chown vagrant:vagrant /home/vagrant/.kube/config
+
+    - name: Install Calico
+      become: false
+      command: kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
+
+    - name: Install MetalLB NameSpace
+      become: false
+      command: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.9.5/manifests/namespace.yaml
+
+    - name: Install MetalLB
+      become: false
+      command: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.9.5/manifests/metallb.yaml
+
+    - name: Create MetalLB Secret
+      become: false
+      command: |
+        kubectl create secret generic -n metallb-system memberlist --from-literal=secretkey="$(openssl rand -base64 128)"
+
+    - name: Copy MetalLB_config file to controller
+      copy:
+        src: MetalLB_config.yaml
+        dest: /home/vagrant/MetalLB_config.yaml
+
+    - name: Configure MetalLB
+      become: false
+      command: kubectl apply -f /home/vagrant/MetalLB_config.yaml
+
+    - name: Generate join command
+      command: kubeadm token create --print-join-command
+      register: join_command
+      become: true
+
+    - name: Ensure file exists to output the join_command results
+      ansible.builtin.file:
+        path: /tmp/join-command
+        state: touch
+      become: true
+
+    - name: Copy join command to local file
+      ansible.builtin.copy:
+        content: "{{ join_command.stdout_lines[0] }}"
+        dest: /tmp/join-command
+
+    - name: Fetch join command
+      ansible.builtin.fetch:
+        src: /tmp/join-command
+        dest: join-command
+        flat: yes
+
+    - name: Fetch kubeconfig
+      ansible.builtin.fetch:
+        src: /etc/kubernetes/admin.conf
+        dest: admin.conf
+        flat: yes
+      become: true
+
+  handlers:
+    - name: docker status
+      service: name=docker state=started

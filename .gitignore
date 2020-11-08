@@ -1,0 +1,10 @@
+.vagrant
+.terraform
+terraform.tfstate.backup
+terraform.tfstate
+selections.json
+.python-version
+admin.conf
+join-command
+ansible.cfg
+join.sh
