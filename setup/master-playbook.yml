@@ -132,6 +132,13 @@
       become: false
       command: kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
 
+    - name: Install calicoctl
+      get_url:
+          dest: /usr/local/bin/calicoctl
+          url: https://github.com/projectcalico/calicoctl/releases/download/v3.14.0/calicoctl 
+          mode: +x
+      become: yes
+
     - name: Install MetalLB NameSpace
       become: false
       command: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.9.5/manifests/namespace.yaml

@@ -114,6 +114,13 @@
         daemon_reload: yes
         state: restarted
 
+    - name: Install calicoctl
+      get_url:
+          dest: /usr/local/bin/calicoctl
+          url: https://github.com/projectcalico/calicoctl/releases/download/v3.14.0/calicoctl 
+          mode: +x
+      become: yes
+
     - name: Copy the join command to server location
       copy: src=join-command dest=/tmp/join-command.sh mode=0777
 
