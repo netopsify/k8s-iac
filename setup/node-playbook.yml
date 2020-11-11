@@ -127,6 +127,24 @@
     - name: Join the node to cluster
       command: sh /tmp/join-command.sh
 
+    - name: update ip in 10-kubeadm.conf
+      lineinfile:
+        path: /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+        state: present
+        line: 'Environment="KUBELET_EXTRA_ARGS=--node-ip={{ ansible_host }}"'
+      become: true
+      notify:
+        - reload systemd
+        - restart kubelet
+
   handlers:
     - name: docker status
       service: name=docker state=started
+    - name: reload systemd
+      systemd:
+        daemon_reload: yes
+    - name: restart kubelet
+      systemd:
+        state: restarted
+        daemon_reload: yes
+        name: kubelet

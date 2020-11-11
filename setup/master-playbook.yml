@@ -134,9 +134,9 @@
 
     - name: Install calicoctl
       get_url:
-          dest: /usr/local/bin/calicoctl
-          url: https://github.com/projectcalico/calicoctl/releases/download/v3.14.0/calicoctl 
-          mode: +x
+        dest: /usr/local/bin/calicoctl
+        url: https://github.com/projectcalico/calicoctl/releases/download/v3.14.0/calicoctl
+        mode: +x
       become: yes
 
     - name: Install MetalLB NameSpace
@@ -190,6 +190,24 @@
         flat: yes
       become: true
 
+    - name: update ip in 10-kubeadm.conf
+      lineinfile:
+        path: /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+        state: present
+        line: 'Environment="KUBELET_EXTRA_ARGS=--node-ip={{ ansible_host }}"'
+      become: true
+      notify:
+        - reload systemd
+        - restart kubelet
+
   handlers:
     - name: docker status
       service: name=docker state=started
+    - name: reload systemd
+      systemd:
+        daemon_reload: yes
+    - name: restart kubelet
+      systemd:
+        state: restarted
+        daemon_reload: yes
+        name: kubelet
