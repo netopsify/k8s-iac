@@ -28,6 +28,7 @@
           - curl
           - gnupg-agent
           - software-properties-common
+          - arping
 
     - name: Uninstall old versions
       apt:
@@ -107,6 +108,7 @@
           - kubelet
           - kubeadm
           - kubectl
+          - kubetail
 
     - name: Restart kubelet
       service:
@@ -114,12 +116,20 @@
         daemon_reload: yes
         state: restarted
 
+    # - name: Initialize the Kubernetes cluster using kubeadm
+    #   command: |
+    #     sudo kubeadm init \
+    #       --config /vagrant/setup/kubeadm-config-iptables-mode.yaml
+
     - name: Initialize the Kubernetes cluster using kubeadm
       command: |
         sudo kubeadm init \
           --apiserver-advertise-address="192.168.50.10" \
           --apiserver-cert-extra-sans="192.168.50.10"  \
-          --node-name master --pod-network-cidr=192.168.0.0/16
+          --node-name master \
+          --pod-network-cidr=10.48.0.0/16 \
+          --service-cidr=10.49.0.0/16 \
+          --service-dns-domain=cluster.local
 
     - name: Setup kubeconfig for vagrant user
       command: "{{ item }}"
@@ -130,7 +140,8 @@
 
     - name: Install Calico
       become: false
-      command: kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
+      # command: kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
+      command: kubectl apply -f /vagrant/setup/calico.yaml
 
     - name: Install calicoctl
       get_url:
@@ -138,6 +149,24 @@
         url: https://github.com/projectcalico/calicoctl/releases/download/v3.14.0/calicoctl
         mode: +x
       become: yes
+
+    - name: Setup ENV for calicoctl in .bashrc
+      blockinfile:
+        dest: /home/vagrant/.bashrc
+        block: |
+          export KUBECONFIG=/vagrant/setup/admin.conf
+          export DATASTORE_TYPE=kubernetes
+      become: true
+
+    - name: Create calicoctl config dir
+      file:
+        path: /etc/calico
+        state: directory
+
+    - name: Copy calicoctl config
+      copy:
+        src: calicoctl.cfg
+        dest: /etc/calico
 
     - name: Install MetalLB NameSpace
       become: false
@@ -152,14 +181,9 @@
       command: |
         kubectl create secret generic -n metallb-system memberlist --from-literal=secretkey="$(openssl rand -base64 128)"
 
-    - name: Copy MetalLB_config file to controller
-      copy:
-        src: MetalLB_config.yaml
-        dest: /home/vagrant/MetalLB_config.yaml
-
     - name: Configure MetalLB
       become: false
-      command: kubectl apply -f /home/vagrant/MetalLB_config.yaml
+      command: kubectl apply -f /vagrant/setup/MetalLB_config.yaml
 
     - name: Generate join command
       command: kubeadm token create --print-join-command
@@ -194,11 +218,15 @@
       lineinfile:
         path: /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
         state: present
-        line: 'Environment="KUBELET_EXTRA_ARGS=--node-ip={{ ansible_host }}"'
+        line: 'Environment="KUBELET_EXTRA_ARGS=--node-ip={{ node_ip }}"'
       become: true
       notify:
         - reload systemd
         - restart kubelet
+
+    - name: Configure Calico BGP
+      become: false
+      command: calicoctl apply -f /vagrant/setup/calico_bgp.yaml
 
   handlers:
     - name: docker status

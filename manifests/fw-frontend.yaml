@@ -1,0 +1,32 @@
+---
+apiVersion: projectcalico.org/v3
+kind: NetworkPolicy
+metadata:
+  name: frontend
+  namespace: dev1
+spec:
+  order: 100
+  selector: fw-zone == "frontend"
+  ingress:
+    - action: Allow
+      source:
+        selector: fw-zone == "dmz"
+      destination: {}
+    - action: Deny
+      source: {}
+      destination: {}
+  egress:
+    - action: Allow
+      source: {}
+      destination: {}
+  # egress:
+  #   - action: Allow
+  #     source: {}
+  #     destination:
+  #       selector: fw-zone == "backend"||app == "ratings"
+  #   - action: Deny
+  #     source: {}
+  #     destination: {}
+  # types:
+  #   - Ingress
+  #   - Egress

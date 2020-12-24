@@ -1,0 +1,32 @@
+# Run as
+# calicoctl apply -f calico_bgp.yaml
+---
+apiVersion: projectcalico.org/v3
+kind: BGPConfiguration
+metadata:
+  name: default
+spec:
+  logSeverityScreen: Info
+  nodeToNodeMeshEnabled: true
+  asNumber: 64512
+  serviceClusterIPs:
+  - cidr: 10.49.0.0/16
+  serviceExternalIPs:
+  - cidr: 192.168.50.0/24
+  # - cidr: 172.217.3.0/24
+  # listenPort: 178
+  # communities:
+  # - name: bgp-large-community
+  #   value: 63400:300:100
+  # prefixAdvertisements:
+  # - cidr: 192.168.60.0/24
+  #   communities:
+  #   - 64512:120
+---
+apiVersion: projectcalico.org/v3
+kind: BGPPeer
+metadata:
+  name: tor-bgp
+spec:
+  peerIP: 192.168.50.250
+  asNumber: 65101

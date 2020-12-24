@@ -8,3 +8,4 @@ admin.conf
 join-command
 ansible.cfg
 join.sh
+examples/

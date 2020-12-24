@@ -28,6 +28,7 @@
           - curl
           - gnupg-agent
           - software-properties-common
+          - arping
 
     - name: Uninstall old versions
       apt:
@@ -107,6 +108,7 @@
           - kubelet
           - kubeadm
           - kubectl
+          - kubetail
 
     - name: Restart kubelet
       service:
@@ -116,10 +118,33 @@
 
     - name: Install calicoctl
       get_url:
-          dest: /usr/local/bin/calicoctl
-          url: https://github.com/projectcalico/calicoctl/releases/download/v3.14.0/calicoctl 
-          mode: +x
+        dest: /usr/local/bin/calicoctl
+        url: https://github.com/projectcalico/calicoctl/releases/download/v3.14.0/calicoctl
+        mode: +x
       become: yes
+
+    - name: Setup ENV for calicoctl in .bashrc
+      blockinfile:
+        dest: /home/vagrant/.bashrc
+        marker: "#<!-- {mark} calicoctl -->"
+        block: |
+          export KUBECONFIG=/vagrant/setup/admin.conf
+          export DATASTORE_TYPE=kubernetes
+      become: true
+
+    - name: Create calicoctl config dir
+      file:
+        path: /etc/calico
+        state: directory
+
+    - name: Copy calicoctl config
+      copy:
+        src: calicoctl.cfg
+        dest: /etc/calico/calicoctl.cfg
+
+    # - name: Configure Calico BGP Peering
+    #   become: false
+    #   command: calicoctl apply -f /vagrant/setup/calico_bgp.yaml
 
     - name: Copy the join command to server location
       copy: src=join-command dest=/tmp/join-command.sh mode=0777
@@ -131,7 +156,7 @@
       lineinfile:
         path: /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
         state: present
-        line: 'Environment="KUBELET_EXTRA_ARGS=--node-ip={{ ansible_host }}"'
+        line: 'Environment="KUBELET_EXTRA_ARGS=--node-ip={{ node_ip }}"'
       become: true
       notify:
         - reload systemd
